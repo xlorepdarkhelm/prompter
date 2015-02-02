@@ -23,6 +23,8 @@ COLON = ':'
 PROMPT_SYMBOL = r'\$'
 MEM_SEP = '/'
 MEM_UNITS = 'MB'
+SWAP_SEP = '/'
+SWAP_UNITS = 'MB'
 MEM_SYS_SEP = '\t'
 SYS_SEP = ' '
 PROCS_SEP = '/'
@@ -88,6 +90,35 @@ MEM_TOTAL = ''.join([
     '; '.join([
         r'EC=$?',
         '''echo "$(free -m | grep '^Mem:' | awk '{print $2}')"''',
+        r'exit $EC',
+    ]),
+    ')',
+])
+
+SWAP_FORMAT = ''.join([
+    '$(',
+    '; '.join([
+        r'EC=$?',
+        '''SWAP_FREE=$(free -k | grep '^Swap:' | awk '{print_line}')''',
+        '{color_range}',
+        r'exit $EC',
+    ]),
+    ')',
+])
+SWAP_FREE = ''.join([
+    '$(',
+    '; '.join([
+        r'EC=$?',
+        '''echo "$(free -m | grep '^Swap:' | awk '{print $4}')"''',
+        r'exit $EC',
+    ]),
+    ')',
+])
+SWAP_TOTAL = ''.join([
+    '$(',
+    '; '.join([
+        r'EC=$?',
+        '''echo "$(free -m | grep '^Swap:' | awk '{print $2}')"''',
         r'exit $EC',
     ]),
     ')',
@@ -327,13 +358,39 @@ def get_mem_free_color_range():
     return '; '.join([
         '; el'.join(
             '; '.join([
-                'if [[ $MEM_FREE -le {threshold} ]]',
+                'if [[ $MEM_FREE -ge {threshold} ]]',
                 'then echo "{color}"'
             ]).format(
                 threshold=threshold,
                 color=get_fore_color(color)
             )
-            for threshold, color in gen_mem_range_gradient()
+            for threshold, color in reversed(list(gen_mem_range_gradient()))
+        ),
+        'fi'
+    ])
+
+
+def gen_swap_range_gradient():
+    yield from (
+        (
+            int((psutil.swap_memory().total / 1024) * pct + 0.5),
+            color
+        )
+        for pct, color in gen_pct_range_gradient(config.settings.swap.range)
+    )
+
+
+def get_swap_free_color_range():
+    return '; '.join([
+        '; el'.join(
+            '; '.join([
+                'if [[ $SWAP_FREE -ge {threshold} ]]',
+                'then echo "{color}"'
+            ]).format(
+                threshold=threshold,
+                color=get_fore_color(color)
+            )
+            for threshold, color in reversed(list(gen_swap_range_gradient()))
         ),
         'fi'
     ])
@@ -351,11 +408,6 @@ def gen_load_range_gradient(name):
 def get_load_avg_color_range(mins):
     name = 'avg_{mins}m'.format(mins=mins)
     return '; '.join([
-        'FORE_COLOR="{fore_color}"'.format(
-            fore_color=get_fore_color(
-                get_color_from_config(config.settings.sys.load[name].fore)
-            )
-        ),
         '; el'.join(
             '; '.join([
                 ' '.join([
@@ -371,7 +423,7 @@ def get_load_avg_color_range(mins):
                     '1',
                     ']]'
                 ]),
-                'then echo "$FORE_COLOR{back_color}"'
+                'then echo "{back_color}"'
             ]).format(
                 mins=mins,
                 threshold=threshold,
@@ -613,35 +665,118 @@ class Prompt(config.Base):
         )
 
         self.register_attr(
-            'load1',
+            'swap_free',
             lambda: self.wrap(
-                LOAD_1M,
-                LOAD_1M_FORMAT.format(
-                    color_range=get_load_avg_color_range(1)
+                SWAP_FREE,
+                SWAP_FORMAT.format(
+                    print_line='{print $4}',
+                    color_range=get_swap_free_color_range()
                 )
             ),
+            'Gets the swap free component for the prompt.'
+        )
+
+        self.register_attr(
+            'swap_total',
+            lambda: self.color_wrap(
+                SWAP_TOTAL,
+                get_color_from_config(config.settings.swap.total)
+            ),
+            'Gets the swap total component for the prompt.'
+        )
+
+        self.register_attr(
+            'swap_sep',
+            lambda: self.color_wrap(
+                SWAP_SEP,
+                get_color_from_config(config.settings.swap.sep)
+            ),
+            'Gets the separator for swap components for the prompt.'
+        )
+
+        self.register_attr(
+            'swap_units',
+            lambda: self.color_wrap(
+                SWAP_UNITS,
+                get_color_from_config(config.settings.swap.units)
+            ),
+            'Gets the units for swap components for the prompt.'
+        )
+
+        self.register_attr(
+            'swap',
+            lambda: ''.join([
+                self.swap_free,
+                self.swap_sep,
+                self.swap_total,
+                self.swap_units,
+            ]),
+            'Gets the swap free/total component for the prompt.'
+        )
+
+        self.register_attr(
+            'mem_swap',
+            lambda: ' '.join([
+                self.memory,
+                self.swap,
+            ]),
+            'Gets the combined memory & swap components for the prompt.'
+        )
+
+        self.register_attr(
+            'load1',
+            lambda: ' '.join([
+                self.wrap(
+                    ' ',
+                    LOAD_1M_FORMAT.format(
+                        color_range=get_load_avg_color_range(1)
+                    )
+                ),
+                self.color_wrap(
+                    LOAD_1M,
+                    get_color_from_config(
+                        config.settings.sys.load['avg_1m'].fore
+                    )
+                ),
+            ]),
             'Gets the Avg Load 1m component for the prompt.'
         )
 
         self.register_attr(
             'load5',
-            lambda: self.wrap(
-                LOAD_5M,
-                LOAD_5M_FORMAT.format(
-                    color_range=get_load_avg_color_range(5)
-                )
-            ),
+            lambda: ' '.join([
+                self.wrap(
+                    ' ',
+                    LOAD_5M_FORMAT.format(
+                        color_range=get_load_avg_color_range(5)
+                    )
+                ),
+                self.color_wrap(
+                    LOAD_5M,
+                    get_color_from_config(
+                        config.settings.sys.load['avg_5m'].fore
+                    )
+                ),
+            ]),
             'Gets the Avg Load 5m component for the prompt.'
         )
 
         self.register_attr(
             'load15',
-            lambda: self.wrap(
-                LOAD_15M,
-                LOAD_15M_FORMAT.format(
-                    color_range=get_load_avg_color_range(15)
-                )
-            ),
+            lambda: ' '.join([
+                self.wrap(
+                    ' ',
+                    LOAD_15M_FORMAT.format(
+                        color_range=get_load_avg_color_range(15)
+                    )
+                ),
+                self.color_wrap(
+                    LOAD_15M,
+                    get_color_from_config(
+                        config.settings.sys.load['avg_15m'].fore
+                    )
+                ),
+            ]),
             'Gets the Avg Load 15m component for the prompt.'
         )
 
@@ -714,7 +849,7 @@ class Prompt(config.Base):
         self.register_attr(
             'mem_sys',
             lambda: MEM_SYS_SEP.join([
-                self.memory,
+                self.mem_swap,
                 self.sys
             ]),
             'Gets the memory & system information component for the prompt.'

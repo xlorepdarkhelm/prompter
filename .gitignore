@@ -1,3 +1,4 @@
 /build
 /dist
 /prompter.egg-info
+/prompter/__pycache__
