@@ -1,0 +1,66 @@
+user:
+    super:
+        root: Beige
+
+    normal:
+        darkhelm: MediumBlue
+        june: ForestGreen
+
+server:
+    uyness:
+        super: DarkGoldenrod
+        normal: Goldenrod
+
+    desktop:
+        super: DarkCyan
+        normal: Cyan
+
+    kankali:
+        super: Indigo
+        normal: Purple
+
+at_symbol: 30
+colon: Gainsboro
+dirname: DarkGray
+basename: WhiteSmoke
+
+test:
+    good:
+        fore: Lime
+        back: DarkGreen
+    bad:
+        fore: Salmon
+        back: DarkRed
+
+memory:
+    total: Green
+    range:
+        50: Lime
+        10: Yellow
+        0: Red
+    sep: DarkSlateGray
+    units: DarkGreen
+
+sys:
+    load:
+        avg_1m:
+            fore: [4, 0, 4]
+            back:
+                0: [2, 0, 0]
+                100: [0, 2, 0]
+        avg_5m:
+            fore: [3, 0, 3]
+            back:
+                0: [2, 0, 0]
+                100: [0, 2, 0]
+        avg_15m:
+            fore: [2, 0, 2]
+            back:
+                0: [2, 0, 0]
+                100: [0, 2, 0]
+    procs:
+        current: Violet
+        total: DarkViolet
+        sep: DarkSlateGray
+
+    last_pid: RebeccaPurple
