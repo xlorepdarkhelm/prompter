@@ -282,14 +282,30 @@ def get_color(fore=None, back=None):
 
 
 def get_color_from_config(value):
-    if isinstance(value, tuple):  # Specifies a 6x6x6 (Xterm) Cube color
-        return colors.from_cube6_xterm(*value)
+    if isinstance(value, config.Base):  # Is a defined color.
+        if 'cube6' in value:
+            return colors.from_cube6(**value.cube6)
+        elif 'cube5' in value:
+            return colors.from_cube5(**value.cube5)
+        elif 'cube6_xterm' in value:
+            return colors.from_cube6_xterm(**value.cube6_xterm)
+        elif 'ansi' in value:
+            return colors.from_ansi(**value.ansi)
+        elif 'xterm' in value:
+            return colors.from_xterm(value.xterm)
+        elif 'rgb' in value:
+            return colors.from_rgb(**value.rgb)
+        elif 'hsv' in value:
+            return colors.from_hsv(**value.hsv)
+        elif 'hsl' in value:
+            return colors.from_hsl(**value.hsl)
+        elif 'grayscale' in value:
+            return colors.from_grayscale(value.grayscale)
+        else:
+            return colors.Black
 
-    elif isinstance(value, str):  # Specifies a named color
+    else:  # Specifies a named color
         return colors[value]
-
-    else:  # Specifies a grayscale color
-        return colors.from_grayscale(value)
 
 
 def gen_pct_range_gradient(range):
@@ -315,7 +331,8 @@ def gen_pct_range_gradient(range):
 
         else:
             color_gradient = list(
-                colors.gen_xterm_grayscale_range(low_color, high_color)
+                colors.from_grayscale(low_color).xterm.
+                gen_grayscale_gradient(colors.from_grayscale(high_color))
             )
 
         if not first:

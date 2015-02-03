@@ -5,6 +5,7 @@ import enum
 import functools
 
 from prompter import config
+from prompter import colors
 
 ESC = '\033'
 
@@ -736,22 +737,11 @@ class SequenceConfig(config.Base):
             'AnsiColorText',
             lambda: lambda color: AnsiSequence(
                 *(
-                    [1 if color.ansi[1] else 2, 30 + color.ansi[0]]
+                    [1 if color.ansi.shift else 2, 30 + color.ansi.index]
                     if hasattr(color, 'ansi')
-                    else [1 if color.ansi[1] else 2, 30 + color.rgb.ansi[0]]
-                    if hasattr(color, 'rgb') and hasattr(color.rgb, 'ansi')
-                    else [30 + color]
-                    if color in range(8)
-                    else raise_(
-                        ValueError(
-                            ' '.join([
-                                'color must be an integer in the range 0-7,',
-                                'or a prompter.colors color, and not {color!r}'
-                            ]).format(
-                                color=color
-                            )
-                        )
-                    )
+                    else [1, 30 + colors.from_ansi(color - 8, True).ansi.index]
+                    if color in range(8, 16)
+                    else [2, 30 + colors.from_ansi(color, False).ansi.index]
                 ),
                 code='m'
             ),
@@ -767,22 +757,11 @@ class SequenceConfig(config.Base):
             'AnsiColorBack',
             lambda: lambda color: AnsiSequence(
                 *(
-                    [1 if color.ansi[1] else 2, 40 + color.ansi[0]]
+                    [1 if color.ansi.shift else 2, 40 + color.ansi.index]
                     if hasattr(color, 'ansi')
-                    else [1 if color.ansi[1] else 2, 40 + color.rgb.ansi[0]]
-                    if hasattr(color, 'rgb') and hasattr(color.rgb, 'ansi')
-                    else [40 + color]
-                    if color in range(8)
-                    else raise_(
-                        ValueError(
-                            ' '.join([
-                                'color must be an integer in the range 0-7,',
-                                'or a prompter.colors color, and not {color!r}'
-                            ]).format(
-                                color=color
-                            )
-                        )
-                    )
+                    else [1, 40 + colors.from_ansi(color - 8, True).ansi.index]
+                    if color in range(8, 16)
+                    else [2, 40 + colors.from_ansi(color, False).ansi.index]
                 ),
                 code='m'
             ),
@@ -816,20 +795,15 @@ class SequenceConfig(config.Base):
                 38,
                 2,
                 *(
-                    [r.rgb.red, r.rgb.green, r.rgb.blue]
-                    if (
-                        hasattr(r, 'rgb')
-                        and hasattr(r.rgb, 'red')
-                        and hasattr(r.rgb, 'green')
-                        and hasattr(r.rgb, 'blue')
-                    )
-                    else [r.red, r.green, r.blue]
+                    r.rgb
+                    if (hasattr(r, 'rgb'))
+                    else r
                     if (
                         hasattr(r, 'red')
                         and hasattr(r, 'green')
                         and hasattr(r, 'blue')
                     )
-                    else [r, g, b]
+                    else colors.from_rgb(r, g, b)
                     if (
                         r in range(256)
                         and g in range(256)
@@ -871,20 +845,15 @@ class SequenceConfig(config.Base):
                 48,
                 2,
                 *(
-                    [r.rgb.red, r.rgb.green, r.rgb.blue]
-                    if (
-                        hasattr(r, 'rgb')
-                        and hasattr(r.rgb, 'red')
-                        and hasattr(r.rgb, 'green')
-                        and hasattr(r.rgb, 'blue')
-                    )
-                    else [r.red, r.green, r.blue]
+                    r.rgb
+                    if hasattr(r, 'rgb')
+                    else r
                     if (
                         hasattr(r, 'red')
                         and hasattr(r, 'green')
                         and hasattr(r, 'blue')
                     )
-                    else [r, g, b]
+                    else colors.from_rgb(r, g, b)
                     if (
                         r in range(256)
                         and g in range(256)
@@ -925,22 +894,9 @@ class SequenceConfig(config.Base):
             lambda: lambda color: AnsiSequence(
                 38,
                 5,
-                color.xterm
+                color.xterm.index
                 if hasattr(color, 'xterm')
-                else color.rgb.xterm
-                if hasattr(color, 'rgb') and hasattr(color.rgb, 'xterm')
-                else color
-                if color in range(256)
-                else raise_(
-                    ValueError(
-                        ' '.join([
-                            'color must be an integer in the range (0-255)',
-                            'or a prompter.colors color, not {color!r}'
-                        ]).format(
-                            color=color
-                        )
-                    )
-                ),
+                else colors.from_xterm(color).xtermi.index,
                 code='m'
             ),
             """
@@ -957,22 +913,9 @@ class SequenceConfig(config.Base):
             lambda: lambda color: AnsiSequence(
                 48,
                 5,
-                color.xterm
+                color.xterm.index
                 if hasattr(color, 'xterm')
-                else color.rgb.xterm
-                if hasattr(color, 'rgb') and hasattr(color.rgb, 'xterm')
-                else color
-                if color in range(256)
-                else raise_(
-                    ValueError(
-                        ' '.join([
-                            'color must be an integer in the range (0-255)',
-                            'or a prompter.colors color, not {color!r}'
-                        ]).format(
-                            color
-                        )
-                    )
-                ),
+                else colors.from_xterm(color).xterm.index,
                 code='m'
             ),
             """

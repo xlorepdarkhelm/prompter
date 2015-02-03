@@ -19,7 +19,7 @@ server:
         super: Indigo
         normal: Purple
 
-at_symbol: 30
+at_symbol: {grayscale: 30}
 colon: Gainsboro
 dirname: DarkGray
 basename: WhiteSmoke
@@ -53,17 +53,17 @@ swap:
 sys:
     load:
         avg_1m:
-            fore: [4, 0, 4]
+            fore: {cube6_xterm: {r: 4, g: 0, b: 4}}
             back:
                 0: Red
                 100: Lime
         avg_5m:
-            fore: [3, 0, 3]
+            fore: {cube6_xterm: {r: 3, g: 0, b: 3}}
             back:
                 0: Red
                 100: Lime
         avg_15m:
-            fore: [2, 0, 2]
+            fore: {cube6_xterm: {r: 2, g: 0, b: 2}}
             back:
                 0: Red
                 100: Lime
