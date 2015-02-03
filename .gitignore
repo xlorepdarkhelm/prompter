@@ -2,3 +2,4 @@
 /dist
 /prompter.egg-info
 /prompter/__pycache__
+.*.swp

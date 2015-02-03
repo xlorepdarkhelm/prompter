@@ -59,6 +59,35 @@ class ColorDecorator:
                 used.add(color)
                 yield color
 
+    @staticmethod
+    def compare(self, short_name, type_, other):
+        cls = type(self)
+        meth_name = ''.join(['__', type_, '__'])
+
+        if not isinstance(other, cls) and hasattr(other, short_name):
+            other = getattr(other, short_name)
+
+        elif not isinstance(other, cls):
+            raise TypeError(
+                'unorderable types: {cls!r} {oper} {other_cls!r}'.format(
+                    cls=cls,
+                    other_cls=type(other),
+                    oper=(
+                        '<' if type_ == 'lt'
+                        else '>' if type_ == 'gt'
+                        else '<=' if type_ == 'le'
+                        else '>=' if type_ == 'ge'
+                        else '==' if type_ == 'eq'
+                        else '!=' if type_ == 'ne'
+                        else '??'
+                    ),
+                )
+            )
+
+        cmp_meth = getattr(super(cls, self), meth_name)
+
+        return cmp_meth(other)
+
     def __call__(self, cls):
         if self.base_prop is not None:
             my_props = {
@@ -100,353 +129,22 @@ class ColorDecorator:
                 )
             )
 
+        setattr(cls, '__hash__', super(cls, cls).__hash__)
+
+        for cmp_type in ('gt', 'ge', 'lt', 'le', 'eq', 'ne'):
+            attr_name = ''.join(['__', cmp_type, '__'])
+
+            setattr(
+                cls,
+                attr_name,
+                functools.partialmethod(
+                    ColorDecorator.compare,
+                    self.short_name,
+                    cmp_type
+                )
+            )
+
         return cls
-
-
-class CubeDecorator:
-    def __init__(self, simple_name, *values):
-        self.simple_name = simple_name
-        self.values = values
-
-    @staticmethod
-    def rgb(self):
-        cls = type(self)
-        if not hasattr(self, '_{name}__rgb'.format(name=cls.__name__)):
-            self.__rgb = RGBColor(
-                cls.values[self.red],
-                cls.values[self.green],
-                cls.values[self.blue]
-            )
-        return self.__rgb
-
-    @staticmethod
-    def check_value(name, value, values):
-        if value not in range(len(values)):
-            raise ValueError(
-                '{name} must be in range 0-{max}, not {val}.'.format(
-                    name=name,
-                    max=len(values) - 1,
-                    val=value
-                )
-            )
-
-    @staticmethod
-    def new(cls, red, green, blue):
-        CubeDecorator.check_value('red', red, cls.values)
-        CubeDecorator.check_value('green', green, cls.values)
-        CubeDecorator.check_value('blue', blue, cls.values)
-
-        return super(cls, cls).__new__(cls, red, green, blue)
-
-    @staticmethod
-    def from_rgb(cls, rgb):
-        red = cls.values.index(
-            min(cls.values, key=lambda x: abs(x - rgb.red))
-        )
-        green = cls.values.index(
-            min(cls.values, key=lambda x: abs(x - rgb.green))
-        )
-        blue = cls.values.index(
-            min(cls.values, key=lambda x: abs(x - rgb.blue))
-        )
-
-        return cls(red, green, blue)
-
-    def __call__(self, cls):
-        cls.simple_name = self.simple_name
-        cls.values = self.values
-        cls.rgb = property(CubeDecorator.rgb)
-        cls.__new__ = CubeDecorator.new
-
-        cls.from_rgb = classmethod(CubeDecorator.from_rgb)
-
-        return ColorDecorator(self.simple_name, 'rgb')(cls)
-
-
-class CubeMeta(type):
-    def __new__(meta, name, bases, ns):
-        bases = bases + (collections.namedtuple(name, 'red green blue'), )
-
-        return type.__new__(meta, name, bases, ns)
-
-
-@CubeDecorator('cube6', 0x00, 0x33, 0x66, 0x99, 0xcc, 0xff)
-class Cube6Color(metaclass=CubeMeta):
-    pass
-
-
-@CubeDecorator('cube5', 0x00, 0x40, 0x80, 0xbf, 0xff)
-class Cube5Color(metaclass=CubeMeta):
-    pass
-
-
-@CubeDecorator('cube6_xterm', 0, 95, 135, 175, 215, 255)
-class Cube6XtermColor(metaclass=CubeMeta):
-    pass
-
-
-@ColorDecorator('grayscale', 'rgb')
-class GrayscaleColor(collections.namedtuple('GrayscaleColor', 'index')):
-    def __new__(cls, index):
-        if index not in range(101):
-            raise ValueError(
-                ' '.join([
-                    'The index must be an integer value between 0-100,',
-                    'not {value!r}'
-                ]).format(
-                    value=index
-                )
-            )
-
-        return super().__new__(cls, index)
-
-    @property
-    def rgb(self):
-        if not hasattr(self, '_GrayscaleColor__rgb'):
-            val = int(self.index / 100 * 255 + 0.5)
-            self.__rgb = RGBColor(val, val, val)
-
-        return self.__rgb
-
-    @classmethod
-    def from_rgb(cls, rgb):
-        return cls(
-            int(
-                (
-                    0.21 * rgb.red
-                    + 0.72 * rgb.green
-                    + 0.07 * rgb.blue
-                ) * 100 / 255 + 0.5
-            )
-        )
-
-    def gen_grayscale_gradient(self, other):
-        if isinstance(
-            other,
-            (
-                HSVColor,
-                HSLColor,
-                Cube6Color,
-                Cube5Color,
-                Cube6XtermColor,
-                AnsiColor,
-                XtermColor,
-                RGBColor,
-            )
-        ):
-            other = other.grayscale
-
-        elif not isinstance(other, GrayscaleColor):
-            other = GrayscaleColor(other)
-
-        dist = other.index - self.index
-        delta = dist // abs(dist)
-
-        used = set()
-
-        for ndx in range(self.index, self.index + dist + delta, delta):
-            color = GrayscaleColor(ndx)
-            if color not in used:
-                used.add(color)
-                yield color
-
-
-class AnsiMeta(type):
-    @property
-    def _reftbl(self):
-        if not hasattr(self, '_AnsiMeta__reftbl'):
-            self.__reftbl = tuple(
-                RGBColor(*rgb)
-                for rgb in config.colors.ansi
-            )
-
-        return self.__reftbl
-
-
-@ColorDecorator('ansi', 'rgb')
-class AnsiColor(
-    collections.namedtuple('AnsiColor', 'index shift'),
-    metaclass=AnsiMeta
-):
-    def __new__(cls, index, shift):
-        if index not in range(8):
-            raise ValueError(
-                'The index value must be in the range 0-7, not {ndx}'.format(
-                    ndx=index
-                )
-            )
-
-        return super().__new__(cls, int(index), bool(shift))
-
-    @property
-    def rgb(self):
-        if not hasattr(self, '_AnsiColor__rgb'):
-            cls = type(self)
-            self.__rgb = cls._reftbl[self.index + 8 * int(self.shift)]
-
-        return self.__rgb
-
-    @classmethod
-    def from_rgb(cls, rgb):
-        grays = {192}
-        colors1 = {0, 128}
-        colors2 = {0, 255}
-
-        def get_ansi(rgb_val):
-            if rgb_val in cls._reftbl[:8]:
-                return cls._reftbl[:8].index(rgb_val), False
-
-            else:
-                return cls._reftbl[8:].index(rgb_val), True
-
-        good_values = sorted(list(grays | colors1 | colors2))
-
-        fixed = RGBColor(
-            min(good_values, key=lambda x: abs(x - rgb.red)),
-            min(good_values, key=lambda x: abs(x - rgb.green)),
-            min(good_values, key=lambda x: abs(x - rgb.blue)),
-        )
-
-        if (
-            any(color in grays for color in fixed)
-            and (
-                fixed.red != fixed.green or
-                fixed.red != fixed.blue or
-                fixed.green != fixed.blue
-            )
-        ):
-            good_values = sorted(list(colors1 | colors2))
-
-            fixed = RGBColor(
-                min(good_values, key=lambda x: abs(x - rgb.red)),
-                min(good_values, key=lambda x: abs(x - rgb.green)),
-                min(good_values, key=lambda x: abs(x - rgb.blue)),
-            )
-
-        exclusive1 = colors1 - colors2
-        exclusive2 = colors2 - colors1
-
-        if any(
-            color in fixed and any(
-                item in exclusive2
-                for item in fixed
-            )
-            for color in exclusive1
-        ):
-            good_values = sorted(list(colors2))
-
-            fixed = RGBColor(
-                min(good_values, key=lambda x: abs(x - rgb.red)),
-                min(good_values, key=lambda x: abs(x - rgb.green)),
-                min(good_values, key=lambda x: abs(x - rgb.blue)),
-            )
-
-        return cls(*get_ansi(fixed))
-
-
-class XtermMeta(type):
-    @property
-    def _reftbl(self):
-        if not hasattr(self, '_XtermMeta__reftbl'):
-            self.__reftbl = tuple(
-                RGBColor(*rgb)
-                for rgb in config.colors.xterm
-            )
-
-        return self.__reftbl
-
-
-@ColorDecorator('xterm', 'rgb')
-class XtermColor(
-    collections.namedtuple('XtermColor', 'index'),
-    metaclass=XtermMeta
-):
-    def __new__(cls, index):
-        if index not in range(len(cls._reftbl)):
-            raise ValueError(
-                ' '.join([
-                    'The index must be an integer value between 0-{max},',
-                    'not {value!r}'
-                ]).format(
-                    max=len(cls._reftbl) - 1,
-                    value=index
-                )
-            )
-
-        return super().__new__(cls, index)
-
-    @property
-    def rgb(self):
-        if not hasattr(self, '_XtermColor__rgb'):
-            cls = type(self)
-            self.__rgb = cls._reftbl[self.index]
-
-        return self.__rgb
-
-    @classmethod
-    def from_rgb(cls, rgb):
-        ansi_grays = {192}
-        ansi_colors1 = {0, 128}
-        ansi_colors2 = {0, 255}
-        cube_colors = set(Cube6XtermColor.values)
-        grayscale = set(range(8, 239, 10))
-
-        good_values = sorted(list(
-            ansi_grays
-            | ansi_colors1
-            | ansi_colors2
-            | cube_colors
-            | grayscale
-        ))
-
-        fixed = RGBColor(
-            min(good_values, key=lambda x: abs(x - rgb.red)),
-            min(good_values, key=lambda x: abs(x - rgb.green)),
-            min(good_values, key=lambda x: abs(x - rgb.blue)),
-        )
-
-        grays = (
-            (ansi_grays | grayscale)
-            - (ansi_colors1 | ansi_colors2 | cube_colors)
-        )
-
-        if (
-            any(color in grays for color in fixed)
-            and (
-                fixed.red != fixed.green or
-                fixed.red != fixed.blue or
-                fixed.green != fixed.blue
-            )
-        ):
-            good_values = sorted(
-                list(ansi_colors1 | ansi_colors2 | cube_colors)
-            )
-
-            fixed = RGBColor(
-                min(good_values, key=lambda x: abs(x - rgb.red)),
-                min(good_values, key=lambda x: abs(x - rgb.green)),
-                min(good_values, key=lambda x: abs(x - rgb.blue)),
-            )
-
-        exclusive1 = ansi_colors1 - (ansi_colors2 | cube_colors)
-        exclusive2 = (ansi_colors2 | cube_colors) - ansi_colors1
-
-        if any(
-            color in fixed and any(
-                item in exclusive2
-                for item in fixed
-            )
-            for color in exclusive1
-        ):
-            good_values = sorted(list(ansi_colors2 | cube_colors))
-
-            fixed = RGBColor(
-                min(good_values, key=lambda x: abs(x - rgb.red)),
-                min(good_values, key=lambda x: abs(x - rgb.green)),
-                min(good_values, key=lambda x: abs(x - rgb.blue)),
-            )
-
-        return cls(cls._reftbl.index(fixed))
 
 
 @ColorDecorator('rgb')
@@ -785,6 +483,351 @@ class HSLColor(collections.namedtuple('HSLColor', 'hue saturation lightness')):
             if color not in used:
                 used.add(color)
                 yield color
+
+
+class AnsiMeta(type):
+    @property
+    def _reftbl(self):
+        if not hasattr(self, '_AnsiMeta__reftbl'):
+            self.__reftbl = tuple(
+                RGBColor(*rgb)
+                for rgb in config.colors.ansi
+            )
+
+        return self.__reftbl
+
+
+@ColorDecorator('ansi', 'rgb')
+class AnsiColor(
+    collections.namedtuple('AnsiColor', 'index shift'),
+    metaclass=AnsiMeta
+):
+    def __new__(cls, index, shift):
+        if index not in range(8):
+            raise ValueError(
+                'The index value must be in the range 0-7, not {ndx}'.format(
+                    ndx=index
+                )
+            )
+
+        return super().__new__(cls, int(index), bool(shift))
+
+    @property
+    def rgb(self):
+        if not hasattr(self, '_AnsiColor__rgb'):
+            cls = type(self)
+            self.__rgb = cls._reftbl[self.index + 8 * int(self.shift)]
+
+        return self.__rgb
+
+    @classmethod
+    def from_rgb(cls, rgb):
+        grays = {192}
+        colors1 = {0, 128}
+        colors2 = {0, 255}
+
+        def get_ansi(rgb_val):
+            if rgb_val in cls._reftbl[:8]:
+                return cls._reftbl[:8].index(rgb_val), False
+
+            else:
+                return cls._reftbl[8:].index(rgb_val), True
+
+        good_values = sorted(list(grays | colors1 | colors2))
+
+        fixed = RGBColor(
+            min(good_values, key=lambda x: abs(x - rgb.red)),
+            min(good_values, key=lambda x: abs(x - rgb.green)),
+            min(good_values, key=lambda x: abs(x - rgb.blue)),
+        )
+
+        if (
+            any(color in grays for color in fixed)
+            and (
+                fixed.red != fixed.green or
+                fixed.red != fixed.blue or
+                fixed.green != fixed.blue
+            )
+        ):
+            good_values = sorted(list(colors1 | colors2))
+
+            fixed = RGBColor(
+                min(good_values, key=lambda x: abs(x - rgb.red)),
+                min(good_values, key=lambda x: abs(x - rgb.green)),
+                min(good_values, key=lambda x: abs(x - rgb.blue)),
+            )
+
+        exclusive1 = colors1 - colors2
+        exclusive2 = colors2 - colors1
+
+        if any(
+            color in fixed and any(
+                item in exclusive2
+                for item in fixed
+            )
+            for color in exclusive1
+        ):
+            good_values = sorted(list(colors2))
+
+            fixed = RGBColor(
+                min(good_values, key=lambda x: abs(x - rgb.red)),
+                min(good_values, key=lambda x: abs(x - rgb.green)),
+                min(good_values, key=lambda x: abs(x - rgb.blue)),
+            )
+
+        return cls(*get_ansi(fixed))
+
+
+class XtermMeta(type):
+    @property
+    def _reftbl(self):
+        if not hasattr(self, '_XtermMeta__reftbl'):
+            self.__reftbl = tuple(
+                RGBColor(*rgb)
+                for rgb in config.colors.xterm
+            )
+
+        return self.__reftbl
+
+
+@ColorDecorator('xterm', 'rgb')
+class XtermColor(
+    collections.namedtuple('XtermColor', 'index'),
+    metaclass=XtermMeta
+):
+    def __new__(cls, index):
+        if index not in range(len(cls._reftbl)):
+            raise ValueError(
+                ' '.join([
+                    'The index must be an integer value between 0-{max},',
+                    'not {value!r}'
+                ]).format(
+                    max=len(cls._reftbl) - 1,
+                    value=index
+                )
+            )
+
+        return super().__new__(cls, index)
+
+    @property
+    def rgb(self):
+        if not hasattr(self, '_XtermColor__rgb'):
+            cls = type(self)
+            self.__rgb = cls._reftbl[self.index]
+
+        return self.__rgb
+
+    @classmethod
+    def from_rgb(cls, rgb):
+        ansi_grays = {192}
+        ansi_colors1 = {0, 128}
+        ansi_colors2 = {0, 255}
+        cube_colors = set(Cube6XtermColor.values)
+        grayscale = set(range(8, 239, 10))
+
+        good_values = sorted(list(
+            ansi_grays
+            | ansi_colors1
+            | ansi_colors2
+            | cube_colors
+            | grayscale
+        ))
+
+        fixed = RGBColor(
+            min(good_values, key=lambda x: abs(x - rgb.red)),
+            min(good_values, key=lambda x: abs(x - rgb.green)),
+            min(good_values, key=lambda x: abs(x - rgb.blue)),
+        )
+
+        grays = (
+            (ansi_grays | grayscale)
+            - (ansi_colors1 | ansi_colors2 | cube_colors)
+        )
+
+        if (
+            any(color in grays for color in fixed)
+            and (
+                fixed.red != fixed.green or
+                fixed.red != fixed.blue or
+                fixed.green != fixed.blue
+            )
+        ):
+            good_values = sorted(
+                list(ansi_colors1 | ansi_colors2 | cube_colors)
+            )
+
+            fixed = RGBColor(
+                min(good_values, key=lambda x: abs(x - rgb.red)),
+                min(good_values, key=lambda x: abs(x - rgb.green)),
+                min(good_values, key=lambda x: abs(x - rgb.blue)),
+            )
+
+        exclusive1 = ansi_colors1 - (ansi_colors2 | cube_colors)
+        exclusive2 = (ansi_colors2 | cube_colors) - ansi_colors1
+
+        if any(
+            color in fixed and any(
+                item in exclusive2
+                for item in fixed
+            )
+            for color in exclusive1
+        ):
+            good_values = sorted(list(ansi_colors2 | cube_colors))
+
+            fixed = RGBColor(
+                min(good_values, key=lambda x: abs(x - rgb.red)),
+                min(good_values, key=lambda x: abs(x - rgb.green)),
+                min(good_values, key=lambda x: abs(x - rgb.blue)),
+            )
+
+        return cls(cls._reftbl.index(fixed))
+
+
+@ColorDecorator('grayscale', 'rgb')
+class GrayscaleColor(collections.namedtuple('GrayscaleColor', 'index')):
+    def __new__(cls, index):
+        if index not in range(101):
+            raise ValueError(
+                ' '.join([
+                    'The index must be an integer value between 0-100,',
+                    'not {value!r}'
+                ]).format(
+                    value=index
+                )
+            )
+
+        return super().__new__(cls, index)
+
+    @property
+    def rgb(self):
+        if not hasattr(self, '_GrayscaleColor__rgb'):
+            val = int(self.index / 100 * 255 + 0.5)
+            self.__rgb = RGBColor(val, val, val)
+
+        return self.__rgb
+
+    @classmethod
+    def from_rgb(cls, rgb):
+        return cls(
+            int(
+                (
+                    0.21 * rgb.red
+                    + 0.72 * rgb.green
+                    + 0.07 * rgb.blue
+                ) * 100 / 255 + 0.5
+            )
+        )
+
+    def gen_grayscale_gradient(self, other):
+        if isinstance(
+            other,
+            (
+                HSVColor,
+                HSLColor,
+                Cube6Color,
+                Cube5Color,
+                Cube6XtermColor,
+                AnsiColor,
+                XtermColor,
+                RGBColor,
+            )
+        ):
+            other = other.grayscale
+
+        elif not isinstance(other, GrayscaleColor):
+            other = GrayscaleColor(other)
+
+        dist = other.index - self.index
+        delta = dist // abs(dist)
+
+        used = set()
+
+        for ndx in range(self.index, self.index + dist + delta, delta):
+            color = GrayscaleColor(ndx)
+            if color not in used:
+                used.add(color)
+                yield color
+
+
+class CubeDecorator:
+    def __init__(self, simple_name, *values):
+        self.simple_name = simple_name
+        self.values = values
+
+    @staticmethod
+    def rgb(self):
+        cls = type(self)
+        if not hasattr(self, '_{name}__rgb'.format(name=cls.__name__)):
+            self.__rgb = RGBColor(
+                cls.values[self.red],
+                cls.values[self.green],
+                cls.values[self.blue]
+            )
+        return self.__rgb
+
+    @staticmethod
+    def check_value(name, value, values):
+        if value not in range(len(values)):
+            raise ValueError(
+                '{name} must be in range 0-{max}, not {val}.'.format(
+                    name=name,
+                    max=len(values) - 1,
+                    val=value
+                )
+            )
+
+    @staticmethod
+    def new(cls, red, green, blue):
+        CubeDecorator.check_value('red', red, cls.values)
+        CubeDecorator.check_value('green', green, cls.values)
+        CubeDecorator.check_value('blue', blue, cls.values)
+
+        return super(cls, cls).__new__(cls, red, green, blue)
+
+    @staticmethod
+    def from_rgb(cls, rgb):
+        red = cls.values.index(
+            min(cls.values, key=lambda x: abs(x - rgb.red))
+        )
+        green = cls.values.index(
+            min(cls.values, key=lambda x: abs(x - rgb.green))
+        )
+        blue = cls.values.index(
+            min(cls.values, key=lambda x: abs(x - rgb.blue))
+        )
+
+        return cls(red, green, blue)
+
+    def __call__(self, cls):
+        cls.simple_name = self.simple_name
+        cls.values = self.values
+        cls.rgb = property(CubeDecorator.rgb)
+        cls.__new__ = CubeDecorator.new
+
+        cls.from_rgb = classmethod(CubeDecorator.from_rgb)
+
+        return ColorDecorator(self.simple_name, 'rgb')(cls)
+
+
+class CubeMeta(type):
+    def __new__(meta, name, bases, ns):
+        bases = bases + (collections.namedtuple(name, 'red green blue'), )
+        return type.__new__(meta, name, bases, ns)
+
+
+@CubeDecorator('cube6', 0x00, 0x33, 0x66, 0x99, 0xcc, 0xff)
+class Cube6Color(metaclass=CubeMeta):
+    pass
+
+
+@CubeDecorator('cube5', 0x00, 0x40, 0x80, 0xbf, 0xff)
+class Cube5Color(metaclass=CubeMeta):
+    pass
+
+
+@CubeDecorator('cube6_xterm', 0, 95, 135, 175, 215, 255)
+class Cube6XtermColor(metaclass=CubeMeta):
+    pass
 
 
 class ColorConfig(config.Base):
