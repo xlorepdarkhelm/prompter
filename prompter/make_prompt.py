@@ -330,9 +330,11 @@ def gen_pct_range_gradient(range):
             )
 
         else:
+            low_color = colors.from_grayscale(low_color)
+            high_color = colors.from_grayscale(high_color)
+
             color_gradient = list(
-                colors.from_grayscale(low_color).xterm.
-                gen_grayscale_gradient(colors.from_grayscale(high_color))
+                low_color.xterm.gen_grayscale_gradient(high_color)
             )
 
         if not first:

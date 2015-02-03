@@ -5,6 +5,104 @@ import functools
 from prompter import config
 
 
+class ColorDecorator:
+    props = {
+        'rgb',
+        'hsv',
+        'hsl',
+        'ansi',
+        'xterm',
+        'grayscale',
+        'cube6',
+        'cube5',
+        'cube6_xterm',
+    }
+
+    grads = {
+        'rgb',
+        'hsv',
+        'hsl',
+        'grayscale',
+    }
+
+    def __init__(self, short_name, base_prop=None):
+        self.short_name = short_name
+        self.base_prop = base_prop
+
+    @staticmethod
+    def prop_meth(name, base_prop, self):
+        cls = type(self)
+        if not hasattr(
+            self, '_{name}__{prop}'.format(name=cls.__name__, prop=name)
+        ):
+            setattr(
+                self,
+                ''.join(['__', name]),
+                getattr(getattr(self, base_prop), name)
+            )
+
+        return getattr(self, ''.join(['__', name]))
+
+    @staticmethod
+    def gen_gradient(self, short_name, color_type, other):
+        used = set()
+        meth = getattr(
+            getattr(self, color_type),
+            '_'.join(['gen', color_type, 'gradient'])
+        )
+
+        for color in (
+            getattr(sub_color, short_name)
+            for sub_color in meth(other)
+        ):
+            if color not in used:
+                used.add(color)
+                yield color
+
+    def __call__(self, cls):
+        if self.base_prop is not None:
+            my_props = {
+                prop
+                for prop in ColorDecorator.props
+                if hasattr(cls, prop)
+            }
+
+            my_props.add(self.short_name)
+
+            for prop in ColorDecorator.props - my_props:
+                setattr(
+                    cls,
+                    prop,
+                    property(
+                        functools.partial(
+                            ColorDecorator.prop_meth,
+                            prop,
+                            self.base_prop
+                        )
+                    )
+                )
+
+        my_grads = {
+            grad
+            for grad in ColorDecorator.grads
+            if hasattr(cls, '_'.join(['gen', grad, 'gradient']))
+        }
+
+        for grad in ColorDecorator.grads - my_grads:
+            grad_name = '_'.join(['gen', grad, 'gradient'])
+            setattr(
+                cls,
+                grad_name,
+                functools.partialmethod(
+                    ColorDecorator.gen_gradient,
+                    self.short_name,
+                    grad
+                )
+            )
+
+        return cls
+
+
 class CubeDecorator:
     def __init__(self, simple_name, *values):
         self.simple_name = simple_name
@@ -20,46 +118,6 @@ class CubeDecorator:
                 cls.values[self.blue]
             )
         return self.__rgb
-
-    @staticmethod
-    def hsv(self):
-        cls = type(self)
-        if not hasattr(self, '_{name}__hsv'.format(name=cls.__name__)):
-            self.__hsv = self.rgb.hsv
-
-        return self.__hsv
-
-    @staticmethod
-    def hsl(self):
-        cls = type(self)
-        if not hasattr(self, '_{name}__hsl'.format(name=cls.__name__)):
-            self.__hsl = self.rgb.hsl
-
-        return self.__hsl
-
-    @staticmethod
-    def ansi(self):
-        cls = type(self)
-        if not hasattr(self, '_{name}__ansi'.format(name=cls.__name__)):
-            self.__ansi = self.rgb.ansi
-
-        return self.__ansi
-
-    @staticmethod
-    def xterm(self):
-        cls = type(self)
-        if not hasattr(self, '_{name}__xterm'.format(name=cls.__name__)):
-            self.__xterm = self.rgb.xterm
-
-        return self.__xterm
-
-    @staticmethod
-    def grayscale(self):
-        cls = type(self)
-        if not hasattr(self, '_{name}__grayscale'.format(name=cls.__name__)):
-            self.__grayscale = self.rgb.grayscale
-
-        return self.__grayscale
 
     @staticmethod
     def check_value(name, value, values):
@@ -81,18 +139,6 @@ class CubeDecorator:
         return super(cls, cls).__new__(cls, red, green, blue)
 
     @staticmethod
-    def gen_gradient(self, color_type, other):
-        used = set()
-        meth = getattr(self.rgb, '_'.join(['gen', color_type, 'gradient']))
-        for color in (
-            getattr(rgb_color, self.simple_name)
-            for rgb_color in meth(other)
-        ):
-            if color not in used:
-                used.add(color)
-                yield color
-
-    @staticmethod
     def from_rgb(cls, rgb):
         red = cls.values.index(
             min(cls.values, key=lambda x: abs(x - rgb.red))
@@ -110,32 +156,11 @@ class CubeDecorator:
         cls.simple_name = self.simple_name
         cls.values = self.values
         cls.rgb = property(CubeDecorator.rgb)
-        cls.hsv = property(CubeDecorator.hsv)
-        cls.hsl = property(CubeDecorator.hsl)
-        cls.xterm = property(CubeDecorator.xterm)
-        cls.ansi = property(CubeDecorator.ansi)
         cls.__new__ = CubeDecorator.new
-
-        cls.gen_rgb_gradient = functools.partialmethod(
-            CubeDecorator.gen_gradient,
-            'rgb'
-        )
-        cls.gen_hsv_gradient = functools.partialmethod(
-            CubeDecorator.gen_gradient,
-            'hsv'
-        )
-        cls.gen_hsl_gradient = functools.partialmethod(
-            CubeDecorator.gen_gradient,
-            'hsl'
-        )
-        cls.gen_grayscale_gradient = functools.partialmethod(
-            CubeDecorator.gen_gradient,
-            'grayscale'
-        )
 
         cls.from_rgb = classmethod(CubeDecorator.from_rgb)
 
-        return cls
+        return ColorDecorator(self.simple_name, 'rgb')(cls)
 
 
 class CubeMeta(type):
@@ -147,55 +172,20 @@ class CubeMeta(type):
 
 @CubeDecorator('cube6', 0x00, 0x33, 0x66, 0x99, 0xcc, 0xff)
 class Cube6Color(metaclass=CubeMeta):
-    @property
-    def cube5(self):
-        if not hasattr(self, '_Cube6Color__cube5'):
-            self.__cube5 = self.rgb.cube5
-
-        return self.__cube5
-
-    @property
-    def cube6_xterm(self):
-        if not hasattr(self, '_Cube6Color__cube6_xterm'):
-            self.__cube6_xterm = self.rgb.cube6_xterm
-
-        return self.__cube6_xterm
+    pass
 
 
 @CubeDecorator('cube5', 0x00, 0x40, 0x80, 0xbf, 0xff)
 class Cube5Color(metaclass=CubeMeta):
-    @property
-    def cube6(self):
-        if not hasattr(self, '_Cube5Color__cube6'):
-            self.__cube6 = self.rgb.cube6
-
-        return self.__cube6
-
-    @property
-    def cube6_xterm(self):
-        if not hasattr(self, '_Cube5Color__cube6_xterm'):
-            self.__cube6_xterm = self.rgb.cube6_xterm
-
-        return self.__cube6_xterm
+    pass
 
 
 @CubeDecorator('cube6_xterm', 0, 95, 135, 175, 215, 255)
 class Cube6XtermColor(metaclass=CubeMeta):
-    @property
-    def cube5(self):
-        if not hasattr(self, '_Cube6XtermColor__cube5'):
-            self.__cube5 = self.rgb.cube5
-
-        return self.__cube5
-
-    @property
-    def cube6(self):
-        if not hasattr(self, '_Cube5XtermColor__cube6'):
-            self.__cube6 = self.rgb.cube6
-
-        return self.__cube6
+    pass
 
 
+@ColorDecorator('grayscale', 'rgb')
 class GrayscaleColor(collections.namedtuple('GrayscaleColor', 'index')):
     def __new__(cls, index):
         if index not in range(101):
@@ -217,55 +207,6 @@ class GrayscaleColor(collections.namedtuple('GrayscaleColor', 'index')):
             self.__rgb = RGBColor(val, val, val)
 
         return self.__rgb
-
-    @property
-    def hsv(self):
-        if not hasattr(self, '_GrayscaleColor__hsv'):
-            self.__hsv = HSVColor(0, 0, self.index)
-
-        return self.__hsv
-
-    @property
-    def hsl(self):
-        if not hasattr(self, '_GrayscaleColor__hsl'):
-            self.__hsl = HSLColor(0, 0, self.index)
-
-        return self.__hsl
-
-    @property
-    def ansi(self):
-        if not hasattr(self, '_GrayscaleColor__ansi'):
-            self.__ansi = self.rgb.ansi
-
-        return self.__ansi
-
-    @property
-    def xterm(self):
-        if not hasattr(self, '_GrayscaleColor__xterm'):
-            self.__xterm = self.rgb.xterm
-
-        return self.__xterm
-
-    @property
-    def cube6(self):
-        if not hasattr(self, '_GrayscaleColor__cube6'):
-            self.__cube6 = self.rgb.cube6
-
-        return self.__cube6
-
-    @property
-    def cube5(self):
-        if not hasattr(self, '_GrayscaleColor__cube5'):
-            self.__cube5 = self.rgb.cube5
-
-        return self.__cube5
-
-    @property
-    def cube6_xterm(self):
-        if not hasattr(self, '_GrayscaleColor__cube6_xterm'):
-            self.__cube6_xterm = self.rgb.cube6_xterm
-
-        return self.__cube6_xterm
 
     @classmethod
     def from_rgb(cls, rgb):
@@ -309,36 +250,6 @@ class GrayscaleColor(collections.namedtuple('GrayscaleColor', 'index')):
                 used.add(color)
                 yield color
 
-    def gen_rgb_gradient(self, other):
-        used = set()
-        for color in (
-            rgb.grayscale
-            for rgb in self.rgb.gen_rgb_gradient(other)
-        ):
-            if color not in used:
-                used.add(color)
-                yield color
-
-    def gen_hsv_gradient(self, other):
-        used = set()
-        for color in (
-            hsv.grayscale
-            for hsv in self.hsv.gen_hsv_gradient(other)
-        ):
-            if color not in used:
-                used.add(color)
-                yield color
-
-    def gen_hsl_gradient(self, other):
-        used = set()
-        for color in (
-            hsl.grayscale
-            for hsl in self.hsl.gen_hsl_gradient(other)
-        ):
-            if color not in used:
-                used.add(color)
-                yield color
-
 
 class AnsiMeta(type):
     @property
@@ -352,6 +263,7 @@ class AnsiMeta(type):
         return self.__reftbl
 
 
+@ColorDecorator('ansi', 'rgb')
 class AnsiColor(
     collections.namedtuple('AnsiColor', 'index shift'),
     metaclass=AnsiMeta
@@ -373,55 +285,6 @@ class AnsiColor(
             self.__rgb = cls._reftbl[self.index + 8 * int(self.shift)]
 
         return self.__rgb
-
-    @property
-    def hsv(self):
-        if not hasattr(self, '_AnsiColor__hsv'):
-            self.__hsv = self.rgb.hsv
-
-        return self.__hsv
-
-    @property
-    def hsl(self):
-        if not hasattr(self, '_AnsiColor__hsl'):
-            self.__hsl = self.rgb.hsl
-
-        return self.__hsl
-
-    @property
-    def xterm(self):
-        if not hasattr(self, '_AnsiColor__xterm'):
-            self.__xterm = self.rgb.xterm
-
-        return self.__xterm
-
-    @property
-    def grayscale(self):
-        if not hasattr(self, '_AnsiColor__grayscale'):
-            self.__grayscale = self.rgb.grayscale
-
-        return self.__grayscale
-
-    @property
-    def cube6(self):
-        if not hasattr(self, '_AnsiColor__cube6'):
-            self.__cube6 = self.rgb.cube6
-
-        return self.__cube6
-
-    @property
-    def cube5(self):
-        if not hasattr(self, '_AnsiColor__cube5'):
-            self.__cube5 = self.rgb.cube5
-
-        return self.__cube5
-
-    @property
-    def cube6_xterm(self):
-        if not hasattr(self, '_AnsiColor__cube6_xterm'):
-            self.__cube6_xterm = self.rgb.cube6_xterm
-
-        return self.__cube6_xterm
 
     @classmethod
     def from_rgb(cls, rgb):
@@ -460,56 +323,25 @@ class AnsiColor(
                 min(good_values, key=lambda x: abs(x - rgb.blue)),
             )
 
-            exclusive1 = colors1 - colors2
-            exclusive2 = colors2 - colors1
+        exclusive1 = colors1 - colors2
+        exclusive2 = colors2 - colors1
 
-            if any(
-                color in fixed and any(
-                    item in exclusive2
-                    for item in fixed
-                )
-                for color in exclusive1
-            ):
-                good_values = sorted(list(colors2))
+        if any(
+            color in fixed and any(
+                item in exclusive2
+                for item in fixed
+            )
+            for color in exclusive1
+        ):
+            good_values = sorted(list(colors2))
 
-                fixed = RGBColor(
-                    min(good_values, key=lambda x: abs(x - rgb.red)),
-                    min(good_values, key=lambda x: abs(x - rgb.green)),
-                    min(good_values, key=lambda x: abs(x - rgb.blue)),
-                )
+            fixed = RGBColor(
+                min(good_values, key=lambda x: abs(x - rgb.red)),
+                min(good_values, key=lambda x: abs(x - rgb.green)),
+                min(good_values, key=lambda x: abs(x - rgb.blue)),
+            )
 
         return cls(*get_ansi(fixed))
-
-    def gen_rgb_gradient(self, other):
-        used = set()
-        for color in (rgb.ansi for rgb in self.rgb.gen_rgb_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
-
-    def gen_hsv_gradient(self, other):
-        used = set()
-        for color in (hsv.ansi for hsv in self.hsv.gen_hsv_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
-
-    def gen_hsl_gradient(self, other):
-        used = set()
-        for color in (hsl.ansi for hsl in self.hsl.gen_hsl_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
-
-    def gen_grayscale_gradient(self, other):
-        used = set()
-        for color in (
-            grayscale.ansi
-            for grayscale in self.grayscale.gen_grayscale_gradient(other)
-        ):
-            if color not in used:
-                used.add(color)
-                yield color
 
 
 class XtermMeta(type):
@@ -524,6 +356,7 @@ class XtermMeta(type):
         return self.__reftbl
 
 
+@ColorDecorator('xterm', 'rgb')
 class XtermColor(
     collections.namedtuple('XtermColor', 'index'),
     metaclass=XtermMeta
@@ -549,55 +382,6 @@ class XtermColor(
             self.__rgb = cls._reftbl[self.index]
 
         return self.__rgb
-
-    @property
-    def hsv(self):
-        if not hasattr(self, '_XtermColor__hsv'):
-            self.__hsv = self.rgb.hsv
-
-        return self.__hsv
-
-    @property
-    def hsl(self):
-        if not hasattr(self, '_XtermColor__hsl'):
-            self.__hsl = self.rgb.hsl
-
-        return self.__hsl
-
-    @property
-    def ansi(self):
-        if not hasattr(self, '_XtermColor__ansi'):
-            self.__ansi = self.rgb.ansi
-
-        return self.__ansi
-
-    @property
-    def grayscale(self):
-        if not hasattr(self, '_XtermColor__grayscale'):
-            self.__grayscale = self.rgb.grayscale
-
-        return self.__grayscale
-
-    @property
-    def cube6(self):
-        if not hasattr(self, '_XtermColor__cube6'):
-            self.__cube6 = self.rgb.cube6
-
-        return self.__cube6
-
-    @property
-    def cube5(self):
-        if not hasattr(self, '_XtermColor__cube5'):
-            self.__cube5 = self.rgb.cube5
-
-        return self.__cube5
-
-    @property
-    def cube6_xterm(self):
-        if not hasattr(self, '_XtermColor__cube6_xterm'):
-            self.__cube6_xterm = self.rgb.cube6_xterm
-
-        return self.__cube6_xterm
 
     @classmethod
     def from_rgb(cls, rgb):
@@ -644,58 +428,28 @@ class XtermColor(
                 min(good_values, key=lambda x: abs(x - rgb.blue)),
             )
 
-            exclusive1 = ansi_colors1 - (ansi_colors2 | cube_colors)
-            exclusive2 = (ansi_colors2 | cube_colors) - ansi_colors1
+        exclusive1 = ansi_colors1 - (ansi_colors2 | cube_colors)
+        exclusive2 = (ansi_colors2 | cube_colors) - ansi_colors1
 
-            if any(
-                color in fixed and any(
-                    item in exclusive2
-                    for item in fixed
-                )
-                for color in exclusive1
-            ):
-                good_values = sorted(list(ansi_colors2 | cube_colors))
+        if any(
+            color in fixed and any(
+                item in exclusive2
+                for item in fixed
+            )
+            for color in exclusive1
+        ):
+            good_values = sorted(list(ansi_colors2 | cube_colors))
 
-                fixed = RGBColor(
-                    min(good_values, key=lambda x: abs(x - rgb.red)),
-                    min(good_values, key=lambda x: abs(x - rgb.green)),
-                    min(good_values, key=lambda x: abs(x - rgb.blue)),
-                )
+            fixed = RGBColor(
+                min(good_values, key=lambda x: abs(x - rgb.red)),
+                min(good_values, key=lambda x: abs(x - rgb.green)),
+                min(good_values, key=lambda x: abs(x - rgb.blue)),
+            )
 
         return cls(cls._reftbl.index(fixed))
 
-    def gen_rgb_gradient(self, other):
-        used = set()
-        for color in (rgb.xterm for rgb in self.rgb.gen_rgb_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
 
-    def gen_hsv_gradient(self, other):
-        used = set()
-        for color in (hsv.xterm for hsv in self.hsv.gen_hsv_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
-
-    def gen_hsl_gradient(self, other):
-        used = set()
-        for color in (hsl.xterm for hsl in self.hsl.gen_hsl_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
-
-    def gen_grayscale_gradient(self, other):
-        used = set()
-        for color in (
-            grayscale.xterm
-            for grayscale in self.grayscale.gen_grayscale_gradient(other)
-        ):
-            if color not in used:
-                used.add(color)
-                yield color
-
-
+@ColorDecorator('rgb')
 class RGBColor(collections.namedtuple('RGBColor', 'red green blue')):
     @property
     def hsv(self):
@@ -781,20 +535,6 @@ class RGBColor(collections.namedtuple('RGBColor', 'red green blue')):
             int(blue * 255),
         )
 
-    def gen_hsv_gradient(self, other):
-        used = set()
-        for color in (hsv.rgb for hsv in self.hsv.gen_hsv_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
-
-    def gen_hsl_gradient(self, other):
-        used = set()
-        for color in (hsl.rgb for hsl in self.hsl.gen_hsl_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
-
     def gen_rgb_gradient(self, other):
         if isinstance(
             other,
@@ -850,17 +590,8 @@ class RGBColor(collections.namedtuple('RGBColor', 'red green blue')):
                 used.add(color)
                 yield color
 
-    def gen_grayscale_gradient(self, other):
-        used = set()
-        for color in (
-            grayscale.rgb
-            for grayscale in self.grayscale.gen_grayscale_gradient(other)
-        ):
-            if color not in used:
-                used.add(color)
-                yield color
 
-
+@ColorDecorator('hsv', 'rgb')
 class HSVColor(collections.namedtuple('HSVColor', 'hue saturation value')):
     @property
     def rgb(self):
@@ -868,55 +599,6 @@ class HSVColor(collections.namedtuple('HSVColor', 'hue saturation value')):
             self.__rgb = RGBColor.from_hsv(self)
 
         return self.__rgb
-
-    @property
-    def hsl(self):
-        if not hasattr(self, '_HSVColor__hsl'):
-            self.__hsl = self.rgb.hsl
-
-        return self.__hsl
-
-    @property
-    def ansi(self):
-        if not hasattr(self, '_HSVColor__ansi'):
-            self.__ansi = self.rgb.ansi
-
-        return self.__ansi
-
-    @property
-    def xterm(self):
-        if not hasattr(self, '_HSVColor__xterm'):
-            self.__xterm = self.rgb.xterm
-
-        return self.__xterm
-
-    @property
-    def grayscale(self):
-        if not hasattr(self, '_HSVColor__grayscale'):
-            self.__grayscale = self.rgb.grayscale
-
-        return self.__grayscale
-
-    @property
-    def cube6(self):
-        if not hasattr(self, '_HSVColor__cube6'):
-            self.__cube6 = self.rgb.cube6
-
-        return self.__cube6
-
-    @property
-    def cube5(self):
-        if not hasattr(self, '_HSVColor__cube5'):
-            self.__cube5 = self.rgb.cube5
-
-        return self.__cube5
-
-    @property
-    def cube6_xterm(self):
-        if not hasattr(self, '_HSVColor__cube6_xterm'):
-            self.__cube6_xterm = self.rgb.cube6_xterm
-
-        return self.__cube6_xterm
 
     @classmethod
     def from_rgb(cls, rgb):
@@ -957,34 +639,6 @@ class HSVColor(collections.namedtuple('HSVColor', 'hue saturation value')):
 
         return -dist1 if dist1 < dist2 else dist2
 
-    def dist_saturation(self, saturation):
-        if self.saturation < saturation:
-            return saturation - self.saturation
-
-        else:
-            return -(self.saturation - saturation)
-
-    def dist_value(self, value):
-        if self.value < value:
-            return value - self.value
-
-        else:
-            return -(self.value - value)
-
-    def gen_rgb_gradient(self, other):
-        used = set()
-        for color in (rgb.hsv for rgb in self.rgb.gen_rgb_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
-
-    def gen_hsl_gradient(self, other):
-        used = set()
-        for color in (hsl.hsv for hsl in self.hsl.gen_hsl_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
-
     def gen_hsv_gradient(self, other):
         if isinstance(
             other,
@@ -1008,8 +662,8 @@ class HSVColor(collections.namedtuple('HSVColor', 'hue saturation value')):
             other = self.incr_hue(other)
 
         dist_hue = self.dist_hue(other.hue)
-        dist_saturation = self.dist_saturation(other.saturation)
-        dist_value = self.dist_value(other.value)
+        dist_saturation = other.saturation - self.saturation
+        dist_value = other.value - self.value
 
         denom = max(abs(dist_hue), abs(dist_saturation), abs(dist_value))
 
@@ -1034,17 +688,8 @@ class HSVColor(collections.namedtuple('HSVColor', 'hue saturation value')):
                 used.add(color)
                 yield color
 
-    def gen_grayscale_gradient(self, other):
-        used = set()
-        for color in (
-            grayscale.hsv
-            for grayscale in self.grayscale.gen_grayscale_gradient(other)
-        ):
-            if color not in used:
-                used.add(color)
-                yield color
 
-
+@ColorDecorator('hsl', 'rgb')
 class HSLColor(collections.namedtuple('HSLColor', 'hue saturation lightness')):
     @property
     def rgb(self):
@@ -1052,55 +697,6 @@ class HSLColor(collections.namedtuple('HSLColor', 'hue saturation lightness')):
             self.__rgb = RGBColor.from_hsl(self)
 
         return self.__rgb
-
-    @property
-    def hsv(self):
-        if not hasattr(self, '_HSLColor__hsv'):
-            self.__hsv = self.rgb.hsv
-
-        return self.__hsv
-
-    @property
-    def ansi(self):
-        if not hasattr(self, '_HSLColor__ansi'):
-            self.__ansi = self.rgb.ansi
-
-        return self.__ansi
-
-    @property
-    def xterm(self):
-        if not hasattr(self, '_HSLColor__xterm'):
-            self.__xterm = self.rgb.xterm
-
-        return self.__xterm
-
-    @property
-    def grayscale(self):
-        if not hasattr(self, '_HSLColor__grayscale'):
-            self.__grayscale = self.rgb.grayscale
-
-        return self.__grayscale
-
-    @property
-    def cube6(self):
-        if not hasattr(self, '_HSLColor__cube6'):
-            self.__cube6 = self.rgb.cube6
-
-        return self.__cube6
-
-    @property
-    def cube5(self):
-        if not hasattr(self, '_HSLColor__cube5'):
-            self.__cube5 = self.rgb.cube5
-
-        return self.__cube5
-
-    @property
-    def cube6_xterm(self):
-        if not hasattr(self, '_HSLColor__cube6_xterm'):
-            self.__cube6_xterm = self.rgb.cube6_xterm
-
-        return self.__cube6_xterm
 
     @classmethod
     def from_rgb(cls, rgb):
@@ -1141,34 +737,6 @@ class HSLColor(collections.namedtuple('HSLColor', 'hue saturation lightness')):
 
         return -dist1 if dist1 < dist2 else dist2
 
-    def dist_saturation(self, saturation):
-        if self.saturation < saturation:
-            return saturation - self.saturation
-
-        else:
-            return -(self.saturation - saturation)
-
-    def dist_lightness(self, lightness):
-        if self.lightness < lightness:
-            return lightness - self.lightness
-
-        else:
-            return -(self.lightness - lightness)
-
-    def gen_rgb_gradient(self, other):
-        used = set()
-        for color in (rgb.hsl for rgb in self.rgb.gen_rgb_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
-
-    def gen_hsv_gradient(self, other):
-        used = set()
-        for color in (hsv.hsl for hsv in self.hsv.gen_hsv_gradient(other)):
-            if color not in used:
-                used.add(color)
-                yield color
-
     def gen_hsl_gradient(self, other):
         if isinstance(
             other,
@@ -1192,8 +760,8 @@ class HSLColor(collections.namedtuple('HSLColor', 'hue saturation lightness')):
             other = self.incr_hue(other)
 
         dist_hue = self.dist_hue(other.hue)
-        dist_saturation = self.dist_saturation(other.saturation)
-        dist_lightness = self.dist_lightness(other.lightness)
+        dist_saturation = other.saturation - self.saturation
+        dist_lightness = other.lightness - self.lightness
 
         denom = max(abs(dist_hue), abs(dist_saturation), abs(dist_lightness))
 
@@ -1214,16 +782,6 @@ class HSLColor(collections.namedtuple('HSLColor', 'hue saturation lightness')):
             lightness += delta_lightness
 
             color = HSLColor(int(hue), int(saturation), int(lightness))
-            if color not in used:
-                used.add(color)
-                yield color
-
-    def gen_grayscale_gradient(self, other):
-        used = set()
-        for color in (
-            grayscale.hsl
-            for grayscale in self.grayscale.gen_grayscale_gradient(other)
-        ):
             if color not in used:
                 used.add(color)
                 yield color
