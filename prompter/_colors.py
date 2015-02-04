@@ -64,10 +64,13 @@ class ColorDecorator:
         cls = type(self)
         meth_name = ''.join(['__', type_, '__'])
 
-        if not isinstance(other, cls) and hasattr(other, short_name):
+        if (
+            (not isinstance(other, cls) or type_ in ('eq', 'ne'))
+            and hasattr(other, short_name)
+        ):
             other = getattr(other, short_name)
 
-        elif not isinstance(other, cls):
+        elif not isinstance(other, cls) and type_ not in ('eq', 'ne'):
             raise TypeError(
                 'unorderable types: {cls!r} {oper} {other_cls!r}'.format(
                     cls=cls,
@@ -77,8 +80,6 @@ class ColorDecorator:
                         else '>' if type_ == 'gt'
                         else '<=' if type_ == 'le'
                         else '>=' if type_ == 'ge'
-                        else '==' if type_ == 'eq'
-                        else '!=' if type_ == 'ne'
                         else '??'
                     ),
                 )
