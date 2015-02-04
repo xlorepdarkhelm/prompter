@@ -68,7 +68,7 @@ class CustomInstallCommand(install):
 setup(
     name='prompter',
 
-    version='0.1.dev4',
+    version='0.1.dev5',
 
     description='The pythonic way to make shell prompts.',
 
