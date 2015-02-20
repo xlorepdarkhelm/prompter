@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import getpass
+import multiprocessing
 import os
 import pwd
 import socket
@@ -427,7 +428,7 @@ def get_swap_free_color_range():
 
 def gen_load_range_gradient(name):
     yield from (
-        (1.0 - pct, color)
+        (multiprocessing.cpu_count() * (1.0 - pct), color)
         for pct, color in gen_pct_range_gradient(
             config.settings.sys.load[name].back
         )
